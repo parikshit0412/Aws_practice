@@ -1,0 +1,20 @@
+{
+  "name": "lambda-functions",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "package": "tsc && cd dist && zip -r ../lambda-package.zip ."
+  },
+  "dependencies": {
+    "@aws-sdk/client-ses": "^3.460.0",
+    "@aws-sdk/client-sqs": "^3.460.0",
+    "pg": "^8.11.3"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.131",
+    "@types/node": "^20.10.0",
+    "@types/pg": "^8.10.9",
+    "typescript": "^5.3.2"
+  }
+}

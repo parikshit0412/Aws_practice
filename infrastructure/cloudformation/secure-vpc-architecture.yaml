@@ -1,0 +1,249 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  AWS CloudFormation IaC: Secure VPC Architecture for Node.js BFF and Private Amazon RDS PostgreSQL.
+  Follows AWS Well-Architected Security: Zero public internet access to database,
+  Security Group referencing, and automated Node.js environment provisioning.
+
+Parameters:
+  EnvironmentName:
+    Description: Environment prefix for resource naming
+    Type: String
+    Default: production
+
+  DBUsername:
+    Description: Master username for RDS PostgreSQL
+    Type: String
+    Default: postgres
+
+  DBPassword:
+    Description: Master password for RDS PostgreSQL (Min 8 chars)
+    Type: String
+    NoEcho: true
+    Default: MySecurePass2026!
+
+  DBName:
+    Description: Initial database name created inside PostgreSQL
+    Type: String
+    Default: aws_fullstack_db
+
+Resources:
+  # ============================================================================
+  # 1. NETWORKING (VPC, Subnets, Internet Gateway, Route Tables)
+  # ============================================================================
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName}-vpc'
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName}-igw'
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # Public Subnet (For Node.js BFF EC2 / Application Load Balancer)
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName}-public-subnet-1'
+
+  # Private Subnet 1 (For RDS Database - Multi-AZ requires at least 2 AZs)
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.10.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName}-private-db-subnet-1'
+
+  # Private Subnet 2 (Second Availability Zone for RDS Subnet Group)
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.20.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName}-private-db-subnet-2'
+
+  # Public Route Table
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName}-public-rt'
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  # ============================================================================
+  # 2. SECURITY GROUPS (Zero-Trust Security Group Referencing)
+  # ============================================================================
+  WebServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for public Node.js BFF EC2 server
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        # Inbound HTTP API traffic
+        - IpProtocol: tcp
+          FromPort: 4000
+          ToPort: 4000
+          CidrIp: 0.0.0.0/0
+        # Inbound Web traffic (HTTP/HTTPS)
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName}-web-server-sg'
+
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for private PostgreSQL database
+      VpcId: !Ref VPC
+      # ⚡ CRITICAL INTERVIEW TAKEAWAY:
+      # Inbound port 5432 is ONLY permitted from the WebServerSecurityGroup ID!
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref WebServerSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName}-database-sg'
+
+  # ============================================================================
+  # 3. AMAZON RDS POSTGRESQL (100% Private, Zero Public IP)
+  # ============================================================================
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Private subnets for RDS PostgreSQL
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName}-db-subnet-group'
+
+  RDSInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Sub '${EnvironmentName}-postgres-db'
+      AllocatedStorage: '20'
+      DBInstanceClass: db.t3.micro
+      Engine: postgres
+      EngineVersion: '15.13'
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      DBName: !Ref DBName
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups:
+        - !Ref DatabaseSecurityGroup
+      PubliclyAccessible: false # ⚡ Zero public internet exposure
+      BackupRetentionPeriod: 7
+      StorageType: gp3
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName}-postgres-instance'
+
+  # ============================================================================
+  # 4. APPLICATION SERVER (EC2 Node.js BFF with Automated UserData)
+  # ============================================================================
+  NodeBFFInstance:
+    Type: AWS::EC2::Instance
+    DependsOn: RDSInstance
+    Properties:
+      InstanceType: t3.micro
+      # Dynamically resolves latest Amazon Linux 2023 AMI via AWS Systems Manager
+      ImageId: '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64}}'
+      SubnetId: !Ref PublicSubnet
+      SecurityGroupIds:
+        - !Ref WebServerSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName}-node-bff'
+      # Automated bootstrap script executed upon instance initialization
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          dnf update -y
+          # Install Node.js 20 and Git
+          dnf install -y nodejs git
+          npm install -g pm2 tsx
+
+          mkdir -p /app
+          cd /app
+
+          # Write dynamic environment file pointing directly to internal RDS Host
+          cat << 'EOF' > .env
+          PORT=4000
+          NODE_ENV=production
+          RDS_HOST=${RDSInstance.Endpoint.Address}
+          RDS_PORT=5432
+          RDS_DB=${DBName}
+          RDS_USER=${DBUsername}
+          RDS_PASS=${DBPassword}
+          EOF
+
+          echo "Bootstrap complete. Connected to RDS Endpoint: ${RDSInstance.Endpoint.Address}" > /var/log/bootstrap.log
+
+Outputs:
+  VPCId:
+    Description: VPC ID of the infrastructure
+    Value: !Ref VPC
+
+  RDSEndpoint:
+    Description: Internal Private Endpoint for RDS PostgreSQL (RDS_HOST)
+    Value: !GetAtt RDSInstance.Endpoint.Address
+
+  EC2PublicIP:
+    Description: Public IP of the Node.js BFF server
+    Value: !GetAtt NodeBFFInstance.PublicIp
+
+  APIHealthCheckURL:
+    Description: URL to test the Node.js BFF API
+    Value: !Sub 'http://${NodeBFFInstance.PublicIp}:4000/api/health'

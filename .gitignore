@@ -1,0 +1,80 @@
+# ==============================================================================
+# Comprehensive .gitignore for Full-Stack AWS & TypeScript Project
+# ==============================================================================
+
+# Dependencies
+node_modules/
+*/node_modules/
+.pnp
+.pnp.js
+
+# Environment variables & secrets (CRITICAL FOR AWS SECURITY)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+!.env.example
+!*/.env.example
+
+# AWS credentials, keys & certificates
+*.pem
+*.key
+*.crt
+*.cer
+*.id_rsa
+*.id_ed25519
+aws-credentials.json
+credentials.csv
+
+# Production build outputs
+dist/
+build/
+*/dist/
+*/build/
+out/
+.next/
+
+# TypeScript & ESLint cache
+*.tsbuildinfo
+.eslintcache
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+*.log
+logs/
+
+# Testing & Coverage
+coverage/
+.nyc_output/
+
+# Serverless & Lambda build artifacts
+.serverless/
+.aws-sam/
+lambda-package.zip
+*.zip
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE & Editors
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# LocalStack & Terraform local state
+.terraform/
+*.tfstate
+*.tfstate.*
+.localstack/

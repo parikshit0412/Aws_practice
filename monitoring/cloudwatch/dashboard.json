@@ -1,0 +1,95 @@
+{
+  "widgets": [
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 0,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [ "AWS/ApplicationELB", "TargetResponseTime", "LoadBalancer", "app/node-bff-alb/50dc6c495c0c9188", { "stat": "p95", "period": 60 } ],
+          [ "...", { "stat": "p99", "period": 60 } ],
+          [ "...", { "stat": "Average", "period": 60 } ]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "us-east-1",
+        "title": "BFF API Latency (p95, p99, avg)"
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12,
+      "y": 0,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [ "AWS/ApplicationELB", "HTTPCode_Target_5XX_Count", "LoadBalancer", "app/node-bff-alb/50dc6c495c0c9188", { "stat": "Sum", "period": 60, "color": "#d62728" } ],
+          [ ".", "HTTPCode_Target_4XX_Count", ".", ".", { "stat": "Sum", "period": 60, "color": "#ff7f0e" } ],
+          [ ".", "RequestCount", ".", ".", { "stat": "Sum", "period": 60, "color": "#2ca02c" } ]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "us-east-1",
+        "title": "ELB Requests & Error Rate (5XX / 4XX)"
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 6,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [ "ContainerInsights", "pod_cpu_utilization", "ClusterName", "production-eks-cluster", "Namespace", "production", { "stat": "Average" } ],
+          [ ".", "pod_memory_utilization", ".", ".", ".", ".", { "stat": "Average" } ]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "us-east-1",
+        "title": "EKS Pod CPU & Memory Utilization"
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12,
+      "y": 6,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [ "AWS/RDS", "DatabaseConnections", "DBInstanceIdentifier", "ecommerce-postgres-prod", { "stat": "Average" } ],
+          [ ".", "CPUUtilization", ".", ".", { "stat": "Average" } ],
+          [ ".", "ReadIOPS", ".", ".", { "stat": "Average" } ],
+          [ ".", "WriteIOPS", ".", ".", { "stat": "Average" } ]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "us-east-1",
+        "title": "RDS PostgreSQL Health & Connection Count"
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 12,
+      "width": 24,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [ "AWS/Lambda", "Invocations", "FunctionName", "processOrder", { "stat": "Sum" } ],
+          [ ".", "Errors", ".", ".", { "stat": "Sum", "color": "#d62728" } ],
+          [ ".", "Throttles", ".", ".", { "stat": "Sum", "color": "#ff7f0e" } ],
+          [ ".", "Duration", ".", ".", { "stat": "p95" } ]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "us-east-1",
+        "title": "Lambda Function Metrics: Invocations, Errors, Duration (p95)"
+      }
+    }
+  ]
+}

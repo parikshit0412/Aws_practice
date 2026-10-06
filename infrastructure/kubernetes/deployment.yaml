@@ -1,0 +1,137 @@
+# =========================================================================================
+# 🎓 DISTRIBUTED SYSTEMS INTERVIEW TALKING POINTS (KUBERNETES RESILIENCE & TOPOLOGY)
+# =========================================================================================
+#
+# 1. HIGH AVAILABILITY & ANTI-AFFINITY (Cross-AZ Scheduling):
+#    - In distributed systems, a single AWS Availability Zone (data center) can lose power.
+#    - Lines 48-58 define `podAntiAffinity`: The Kubernetes scheduler ensures replicas of
+#      `node-bff` are NEVER scheduled onto the same physical node or AZ (`topology.kubernetes.io/zone`).
+#
+# 2. ZERO DOWNTIME ROLLING UPDATES:
+#    - `strategy.type: RollingUpdate` with `maxSurge: 1` and `maxUnavailable: 0` ensures new pods
+#      are healthy and passing readiness checks BEFORE old pods are terminated.
+#
+# 3. SELF-HEALING & HEALTH SIGNALS:
+#    - `readinessProbe`: Removes pod from the ALB target pool if the app cannot serve traffic
+#      (e.g., if DB connection is dropped).
+#    - `livenessProbe`: Restarts the pod if Node.js enters a deadlocked event loop state.
+# =========================================================================================
+
+# -------------------------------------------------------------
+# 1. Namespace Definition (Distributed Multi-Tenancy Isolation)
+# -------------------------------------------------------------
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: production
+---
+# -------------------------------------------------------------
+# 2. ConfigMap (Decoupled Configuration - 12 Factor App)
+# -------------------------------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: node-bff-config
+  namespace: production
+data:
+  NODE_ENV: "production"
+  PORT: "4000"
+  CORS_ORIGIN: "https://app.example.com"
+  DB_PORT: "5432"
+  DB_NAME: "ecommerce_prod"
+---
+# -------------------------------------------------------------
+# 3. Secret (Encrypted Infrastructure Secrets)
+# -------------------------------------------------------------
+apiVersion: v1
+kind: Secret
+metadata:
+  name: node-bff-secrets
+  namespace: production
+type: Opaque
+stringData:
+  RDS_HOST: "prod-db-proxy.proxy-xxxx.us-east-1.rds.amazonaws.com"
+  RDS_USER: "bff_user"
+  RDS_PASS: "SuperSecurePassword123!"
+  JWT_SECRET: "my-jwt-production-secret-key"
+---
+# -------------------------------------------------------------
+# 4. Deployment (Distributed Replicas, Anti-Affinity, Probes)
+# -------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: node-bff-deployment
+  namespace: production
+  labels:
+    app: node-bff
+    tier: backend
+spec:
+  replicas: 3
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0 # ⚡ TEACHING POINT: Zero downtime during deployments
+  selector:
+    matchLabels:
+      app: node-bff
+  template:
+    metadata:
+      labels:
+        app: node-bff
+        tier: backend
+    spec:
+      # ⚡ TEACHING POINT: Distributed Fault Domain Isolation
+      # Spreads pods across AWS Availability Zones so a data center outage does not drop traffic
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - node-bff
+                topologyKey: topology.kubernetes.io/zone # Spread across Availability Zones!
+      containers:
+        - name: node-bff
+          image: 123456789012.dkr.ecr.us-east-1.amazonaws.com/node-bff:v1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 4000
+              name: http
+          envFrom:
+            - configMapRef:
+                name: node-bff-config
+            - secretRef:
+                name: node-bff-secrets
+          # ⚡ TEACHING POINT: Resource Quotas prevent the "Noisy Neighbor" problem in shared clusters
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          # ⚡ TEACHING POINT: Health probes protect users from receiving errors from booting pods
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 4000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 2
+            successThreshold: 1
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 4000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3

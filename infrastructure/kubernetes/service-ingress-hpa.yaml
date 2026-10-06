@@ -1,0 +1,94 @@
+# =========================================================================================
+# 🎓 DISTRIBUTED SYSTEMS INTERVIEW TALKING POINTS (NETWORKING & HORIZONTAL ELASTICITY)
+# =========================================================================================
+#
+# 1. LAYER 7 INGRESS & EDGE TERMINATION:
+#    - The AWS ALB Ingress Controller integrates with AWS Application Load Balancer.
+#    - Uses `alb.ingress.kubernetes.io/target-type: ip`, enabling the ALB to route directly
+#      to individual Pod IPs via the AWS VPC CNI plugin, bypassing extra NodePort hops.
+#
+# 2. ELASTIC AUTO-SCALING (HPA):
+#    - In distributed architectures, static capacity either wastes money (low load)
+#      or drops requests (traffic spike).
+#    - The Horizontal Pod Autoscaler dynamically scales pods between 3 and 15 replicas
+#      based on observed CPU and Memory utilization.
+# =========================================================================================
+
+# -------------------------------------------------------------
+# 1. ClusterIP Service (Internal Pod Routing)
+# -------------------------------------------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: node-bff-service
+  namespace: production
+  labels:
+    app: node-bff
+spec:
+  type: ClusterIP # ⚡ TEACHING POINT: Stable internal DNS abstraction over ephemeral pods
+  selector:
+    app: node-bff
+  ports:
+    - name: http
+      port: 80
+      targetPort: 4000
+---
+# -------------------------------------------------------------
+# 2. AWS Load Balancer Controller Ingress (ALB integration)
+# -------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: node-bff-ingress
+  namespace: production
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    # ⚡ TEACHING POINT: Direct Pod IP routing via AWS VPC CNI plugin (no double NAT / NodePort)
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:123456789012:certificate/abc-123-def
+    alb.ingress.kubernetes.io/healthcheck-path: /api/health
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: '15'
+spec:
+  rules:
+    - host: api.example.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: node-bff-service
+                port:
+                  number: 80
+---
+# -------------------------------------------------------------
+# 3. Horizontal Pod Autoscaler (HPA)
+# -------------------------------------------------------------
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: node-bff-hpa
+  namespace: production
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: node-bff-deployment
+  minReplicas: 3   # ⚡ TEACHING POINT: Minimum 3 replicas to guarantee high availability across 3 AZs
+  maxReplicas: 15  # Elastic ceiling to handle flash crowds / Black Friday traffic spikes
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80

@@ -1,0 +1,23 @@
+# Stage 1: Build React TypeScript SPA
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY package*.json tsconfig*.json vite.config.ts index.html ./
+RUN npm ci
+COPY src/ ./src/
+RUN npm run build
+
+# Stage 2: Serve via Nginx (or upload to AWS S3 + CloudFront)
+FROM nginx:alpine AS runner
+COPY --from=builder /app/dist /usr/share/nginx/html
+# SPA redirect configuration for React Router
+RUN echo 'server { \
+    listen 80; \
+    location / { \
+        root /usr/share/nginx/html; \
+        index index.html index.htm; \
+        try_files $uri $uri/ /index.html; \
+    } \
+}' > /etc/nginx/conf.d/default.conf
+
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
